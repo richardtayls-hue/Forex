@@ -36,12 +36,12 @@ async function candles(pair, tf) {
   const j = await getJSON(`https://query1.finance.yahoo.com/v8/finance/chart/${pair}=X?interval=${iv}&range=${range}`);
   const res = j.chart.result[0], q = res.indicators.quote[0];
   let bars = [];
-  res.timestamp.forEach((t, i) => { if (q.open[i] != null && q.close[i] != null) bars.push({ t, o: q.open[i], c: q.close[i] }); });
+  res.timestamp.forEach((t, i) => { if (q.open[i] != null && q.close[i] != null) bars.push({ t, o: q.open[i], c: q.close[i], h: q.high[i], l: q.low[i] }); });
   if (bucket) {
     const m = new Map();
     for (const b of bars) {
       const k = Math.floor(b.t / bucket) * bucket;
-      if (!m.has(k)) m.set(k, { t: k, o: b.o, c: b.c }); else m.get(k).c = b.c;
+      if (!m.has(k)) m.set(k, { t: k, o: b.o, c: b.c, h: b.h, l: b.l }); else { const x = m.get(k); x.c = b.c; x.h = Math.max(x.h, b.h); x.l = Math.min(x.l, b.l); }
     }
     bars = [...m.values()];
   }
@@ -72,6 +72,31 @@ function avgRetrace(b, pair) {
   return Math.round(L.reduce((a, c) => a + c, 0) / L.length / pt);
 }
 
+// ---- CALIBRATION: prints candidate formulas next to the original site's numbers ----
+const BARS = {};
+const TARGET = { // from the original site (D1, H4, H1)
+  AUDCAD: [1203, 933, 611], AUDCHF: [1239, 897, 628], AUDJPY: [2280, 1776, 1273],
+  AUDNZD: [706, 638, 527], AUDUSD: [1116, 797, 550], CADCHF: [879, 602, 481], CADJPY: [1915, 1565, 1327] };
+function rangeN(b, pair, n) {
+  const s = b.slice(-n); if (s.length < n) return null;
+  const pt = pair.endsWith("JPY") ? 0.001 : 0.00001;
+  return Math.round((Math.max(...s.map((x) => x.h)) - Math.min(...s.map((x) => x.l))) / pt);
+}
+function avgRange(b, pair, n) {
+  const s = b.slice(-n); if (s.length < n) return null;
+  const pt = pair.endsWith("JPY") ? 0.001 : 0.00001;
+  return Math.round(s.reduce((a, x) => a + (x.h - x.l), 0) / n / pt);
+}
+function calib() {
+  console.log("CALIBRATION  (target = original site)");
+  for (const p of Object.keys(TARGET)) RTK.forEach((t, i) => {
+    const b = BARS[p + "|" + t]; if (!b) return;
+    const R = [10, 20, 30, 50, 100].map((n) => "R" + n + "=" + rangeN(b, p, n)).join(" ");
+    const A = [20, 50, 100].map((n) => "A" + n + "=" + avgRange(b, p, n)).join(" ");
+    console.log(p, t, "target=" + TARGET[p][i], "| mine=" + avgRetrace(b, p), "|", R, "|", A);
+  });
+}
+
 (async () => {
   const out = {};
   PAIRS.forEach((p) => (out[p] = { p, v: [null, null, null, null], r: [null, null, null] }));
@@ -82,7 +107,7 @@ function avgRetrace(b, pair) {
     while (n < jobs.length) {
       const [p, t] = jobs[n++];
       try {
-        const b = await candles(p, t);
+        const b = await candles(p, t); BARS[p + "|" + t] = b;
         if (MBK.includes(t)) out[p].v[MBK.indexOf(t)] = countBars(b);
         if (RTK.includes(t)) out[p].r[RTK.indexOf(t)] = avgRetrace(b, p);
       } catch (e) { fail++; console.error(p, t, e.message); }
@@ -90,6 +115,7 @@ function avgRetrace(b, pair) {
   }
   await Promise.all(Array.from({ length: 4 }, worker));
   console.log("failed:", fail, "of", jobs.length);
+  calib();
   if (fail > jobs.length / 3) { console.error("Too many failures; keeping old data.json"); process.exit(1); }
   fs.writeFileSync("data.json", JSON.stringify({ updated: new Date().toISOString(), rows: PAIRS.map((p) => out[p]) }));
   console.log("data.json written");
