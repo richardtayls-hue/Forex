@@ -1,88 +1,24 @@
-<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Forex Live Dashboard</title>
-<style>
-:root{--bg:#f6f6f7;--card:#fff;--tx:#18181b;--mu:#71717a;--bd:#e4e4e7;--ac:#f59e0b;--ok:#15803d;--okb:#dcfce7;--hot:#fee2e2;--hotx:#b91c1c}
-@media (prefers-color-scheme:dark){:root{--bg:#121214;--card:#1a1a1d;--tx:#f4f4f5;--mu:#a1a1aa;--bd:#2a2a2e;--ok:#4ade80;--okb:#1f3a2c;--hot:#3f1d1d;--hotx:#f87171}}
-*{box-sizing:border-box}body{margin:0 auto;background:var(--bg);color:var(--tx);font:16px/1.4 system-ui,-apple-system,sans-serif;padding:20px 16px;max-width:900px}
-h1{margin:0 0 4px;font-size:26px}p.s{margin:0 0 12px;color:var(--mu);font-size:14px}
-.top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:10px}
-.seg{display:flex;border:1px solid var(--bd);border-radius:10px;padding:3px;background:var(--card);width:max-content}
-button{font:inherit;color:var(--tx);cursor:pointer}
-.seg button{border:0;background:none;padding:6px 14px;border-radius:8px}.seg button.on{background:var(--ac);color:#111;font-weight:600}
-.row{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:8px 0}.row>span{color:var(--mu);font-size:14px}
-.chip{border:1px solid var(--bd);background:var(--card);padding:6px 12px;border-radius:10px;font-size:14px}.chip.on{border-color:var(--ac);color:var(--ac);font-weight:600}
-.go{background:var(--ac);color:#111;border:0;font-weight:600}
-.w{overflow-x:auto;margin-top:12px}table{width:100%;border-collapse:separate;border-spacing:0 6px;min-width:420px}
-th{text-align:left;color:var(--mu);font-size:13px;padding:6px 12px;border-bottom:1px solid var(--bd)}
-td{padding:12px;background:var(--card)}td:first-child{border-radius:10px 0 0 10px;font-weight:700}td:last-child{border-radius:0 10px 10px 0}
-tr.hot td{background:var(--hot)}tr.hot td:first-child{color:var(--hotx)}
-.b{display:inline-block;padding:2px 8px;border-radius:6px;font-weight:600}.b.g{background:var(--okb);color:var(--ok)}
-.st{font-size:13px;border:1px solid var(--bd);background:none;border-radius:8px;padding:3px 10px}
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:12px}
-.c{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px}.c.hot{background:var(--hot)}
-.c h3{margin:0 0 6px;font-size:16px}.c.hot h3{color:var(--hotx)}
-.c div{display:flex;justify-content:space-between;align-items:center;font-size:14px;color:var(--mu);margin:2px 0}
-#msg{color:var(--mu);font-size:13px;margin:6px 0}
-</style></head><body>
-<h1>Forex Live Dashboard</h1>
-<p class="s" id="up">Loading...</p>
-<div class="seg" id="tabs"><button data-t="m" class="on">MB Report</button><button data-t="r">Retrace Database</button></div>
-<div class="top"><div style="display:flex;gap:8px;align-items:center"><button class="chip go" id="rf">Reload</button><button class="chip" id="xl">Excel</button><b>Pairs <span id="cnt" style="color:var(--mu);font-weight:400"></span></b></div>
-<div class="seg"><button id="vt" class="on">Table</button><button id="vc">Card</button></div></div>
-<div id="msg"></div>
-<div class="row"><span>Currency:</span><span id="cf"></span></div>
-<div class="row" id="sfr"><span>Status:</span><span id="sf"></span></div>
-<div class="w" id="out"></div>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script>
-const CUR=["AUD","CAD","CHF","JPY","USD","NZD","EUR","GBP"],ST=["Open","Closed","Pending"],MBK=["MN","W1","D1","H4"],RTK=["D1","H4","H1"];
-const PAIRS="AUDCAD AUDCHF AUDJPY AUDNZD AUDUSD CADCHF CADJPY CHFJPY EURAUD EURCAD EURCHF EURGBP EURJPY EURNZD EURUSD GBPAUD GBPCAD GBPCHF GBPJPY GBPNZD GBPUSD NZDCAD NZDCHF NZDJPY NZDUSD USDCAD USDCHF USDJPY".split(" ");
-const TF={MN:{iv:"1mo",range:"5y",bk:0,len:t=>{const d=new Date(t*1e3);d.setUTCMonth(d.getUTCMonth()+1);return d/1e3}},
-W1:{iv:"1wk",range:"2y",bk:0,len:t=>t+7*86400},D1:{iv:"1d",range:"1y",bk:0,len:t=>t+86400},
-H4:{iv:"60m",range:"60d",bk:14400,len:t=>t+14400},H1:{iv:"60m",range:"60d",bk:0,len:t=>t+3600}};
-let D=[],updated=null,tab="m",view="t",fc=new Set(),fs=new Set(),S={};
-try{S=JSON.parse(localStorage.getItem("fxs")||"{}")}catch(e){}
-const gs=p=>S[p]||"Pending",$=i=>document.getElementById(i);
-async function load(){
- $("msg").textContent="Loading...";
- try{const j=await (await fetch("data.json?t="+Date.now())).json();
-  if(!j.rows||!j.rows.length)throw 0;D=j.rows;updated=j.updated;$("msg").textContent=""}
- catch(e){$("msg").textContent="No data yet. Run the workflow once in GitHub (Actions tab)."}
- render()}
-function chips(id,arr,set){$(id).innerHTML=arr.map(a=>'<button class="chip'+(set.has(a)?" on":"")+'" data-a="'+a+'">'+a+'</button>').join("");
- $(id).onclick=e=>{const a=e.target.dataset.a;if(!a)return;set.has(a)?set.delete(a):set.add(a);render()}}
-const bar=(r,i)=>r.v[i]==null?'<span class="b">–</span>':'<span class="b'+(r.v[i]>=3?" g":"")+'">'+r.v[i]+'/3</span>';
-const pv=(r,i)=>r.r[i]==null?"–":r.r[i];
-const stb=r=>'<button class="st" data-p="'+r.p+'">'+gs(r.p)+'</button>';
-function render(){
- chips("cf",CUR,fc);chips("sf",ST,fs);
- $("sfr").style.display=tab=="m"?"flex":"none";
- $("up").textContent=updated?"Updated "+new Date(updated).toLocaleString():"Loading...";
- for(const b of $("tabs").children)b.className=b.dataset.t==tab?"on":"";
- const L=D.filter(r=>(!fc.size||[...fc].some(c=>r.p.includes(c)))&&(tab=="r"||!fs.size||fs.has(gs(r.p))));
- $("cnt").textContent="("+L.length+")";
- const hot=r=>r.v.some(x=>x!=null&&x>=3);let h;
- if(tab=="m")h=view=="t"
- ?'<table><tr><th>Pair</th>'+MBK.map(t=>'<th>'+t+'</th>').join("")+'<th>Status</th></tr>'+L.map(r=>'<tr class="'+(hot(r)?"hot":"")+'"><td>'+r.p+'</td>'+r.v.map((_,i)=>'<td>'+bar(r,i)+'</td>').join("")+'<td>'+stb(r)+'</td></tr>').join("")+'</table>'
- :'<div class="cards">'+L.map(r=>'<div class="c'+(hot(r)?" hot":"")+'"><h3>'+r.p+'</h3>'+MBK.map((t,i)=>'<div>'+t+' '+bar(r,i)+'</div>').join("")+'<div>'+stb(r)+'</div></div>').join("")+'</div>';
- else h=view=="t"
- ?'<table><tr><th>Pair</th>'+RTK.map(t=>'<th>'+t+' Points</th>').join("")+'</tr>'+L.map(r=>'<tr><td>'+r.p+'</td>'+RTK.map((_,i)=>'<td>'+pv(r,i)+'</td>').join("")+'</tr>').join("")+'</table>'
- :'<div class="cards">'+L.map(r=>'<div class="c"><h3>'+r.p+'</h3>'+RTK.map((t,i)=>'<div>'+t+' <b style="color:var(--tx)">'+pv(r,i)+'</b></div>').join("")+'</div>').join("")+'</div>';
- $("out").innerHTML=h;$("vt").className=view=="t"?"on":"";$("vc").className=view=="c"?"on":""}
-$("out").onclick=e=>{const b=e.target.closest(".st");if(!b)return;const p=b.dataset.p;S[p]=ST[(ST.indexOf(gs(p))+1)%3];
- try{localStorage.setItem("fxs",JSON.stringify(S))}catch(x){}render()};
-function xl(){
- if(!window.XLSX){$("msg").textContent="Excel library did not load. Check your connection.";return}
- if(!D.length){$("msg").textContent="No data to export yet.";return}
- const rows=[["Pair","MN bars","W1 bars","D1 bars","H4 bars","D1 Points","H4 Points","H1 Points","Flag (3+ bars)"]];
- D.forEach(r=>rows.push([r.p].concat(r.v.map(x=>x==null?"":x),r.r.map(x=>x==null?"":x),[r.v.some(x=>x!=null&&x>=3)?"YES":""])));
- const ws=XLSX.utils.aoa_to_sheet(rows);ws["!cols"]=[{wch:10},{wch:9},{wch:9},{wch:9},{wch:9},{wch:11},{wch:11},{wch:11},{wch:14}];
- const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Forex");
- XLSX.writeFile(wb,"forex-report-"+new Date().toISOString().slice(0,10)+".xlsx")}
-$("xl").onclick=xl;
-$("tabs").onclick=e=>{const t=e.target.dataset.t;if(t){tab=t;render()}};
-$("vt").onclick=()=>{view="t";render()};$("vc").onclick=()=>{view="c";render()};$("rf").onclick=load;
-render();load();
-</script></body></html>
+name: Update forex data
+on:
+  schedule:
+    - cron: "30 22 * * 1-5"
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: update-forex
+  cancel-in-progress: false
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node fetch.js
+      - run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add data.json
+          git diff --staged --quiet || (git commit -m "Update data" && git pull --rebase -X theirs origin main && git push)
