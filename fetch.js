@@ -6,9 +6,9 @@ const PAIRS = ("AUDCAD AUDCHF AUDJPY AUDNZD AUDUSD CADCHF CADJPY CHFJPY EURAUD E
 const TF = {
   MN: { iv: "1mo", range: "5y", bucket: 0, len: (t) => { const d = new Date(t * 1000); d.setUTCMonth(d.getUTCMonth() + 1); return d / 1000; } },
   W1: { iv: "1wk", range: "2y", bucket: 0, len: (t) => t + 7 * 86400 },
-  D1: { iv: "1d", range: "1y", bucket: 0, len: (t) => t + 86400 },
-  H4: { iv: "60m", range: "60d", bucket: 4 * 3600, len: (t) => t + 4 * 3600 },
-  H1: { iv: "60m", range: "60d", bucket: 0, len: (t) => t + 3600 },
+  D1: { iv: "1d", range: "10y", bucket: 0, len: (t) => t + 86400 },
+  H4: { iv: "60m", range: "1y", bucket: 4 * 3600, len: (t) => t + 4 * 3600 },
+  H1: { iv: "60m", range: "1y", bucket: 0, len: (t) => t + 3600 },
 };
 const MBK = ["MN", "W1", "D1", "H4"], RTK = ["D1", "H4", "H1"];
 const memo = new Map();
@@ -87,13 +87,33 @@ function avgRange(b, pair, n) {
   const pt = pair.endsWith("JPY") ? 0.001 : 0.00001;
   return Math.round(s.reduce((a, x) => a + (x.h - x.l), 0) / n / pt);
 }
+// Average leg size between alternating swing highs/lows (fractal pivots of order k).
+function swingAvg(b, pair, k) {
+  const pt = pair.endsWith("JPY") ? 0.001 : 0.00001, P = [];
+  for (let i = k; i < b.length - k; i++) {
+    let hi = true, lo = true;
+    for (let j = 1; j <= k; j++) {
+      if (b[i].h < b[i - j].h || b[i].h < b[i + j].h) hi = false;
+      if (b[i].l > b[i - j].l || b[i].l > b[i + j].l) lo = false;
+    }
+    const add = (type, v) => {
+      const last = P[P.length - 1];
+      if (last && last.type === type) { if ((type === "H" && v > last.v) || (type === "L" && v < last.v)) last.v = v; }
+      else P.push({ type, v });
+    };
+    if (hi) add("H", b[i].h); else if (lo) add("L", b[i].l);
+  }
+  if (P.length < 3) return null;
+  let sum = 0;
+  for (let i = 1; i < P.length; i++) sum += Math.abs(P[i].v - P[i - 1].v);
+  return Math.round(sum / (P.length - 1) / pt);
+}
 function calib() {
   console.log("CALIBRATION  (target = original site)");
   for (const p of Object.keys(TARGET)) RTK.forEach((t, i) => {
     const b = BARS[p + "|" + t]; if (!b) return;
-    const R = [10, 20, 30, 50, 100].map((n) => "R" + n + "=" + rangeN(b, p, n)).join(" ");
-    const A = [20, 50, 100].map((n) => "A" + n + "=" + avgRange(b, p, n)).join(" ");
-    console.log(p, t, "target=" + TARGET[p][i], "| mine=" + avgRetrace(b, p), "|", R, "|", A);
+    const S = [2, 3, 5, 8, 12].map((k) => "S" + k + "=" + swingAvg(b, p, k)).join(" ");
+    console.log(p, t, "target=" + TARGET[p][i], "|", S);
   });
 }
 
